@@ -1,22 +1,26 @@
-import insightface
+from deepface import DeepFace
 import cv2
+import numpy as np
 
 class FaceModel:
-    def __init__(self):
-        self.model = insightface.app.FaceAnalysis()
-        self.model.prepare(ctx_id=0, det_size=(640, 640))
+    def __init__(self, model_name="ArcFace"):
+        self.model_name = model_name
+        self.model = DeepFace.build_model(model_name) # Load model here
 
-    def extract_embedding(self, image_path):
-        """Извлекает эмбеддинг из изображения."""
-        img = cv2.imread(image_path)
-        faces = self.model.get(img)
-        if len(faces) == 0:
-            raise ValueError("Лицо не обнаружено на изображении!")
-        return faces[0].embedding  # Возвращаем эмбеддинг первого лица
+    def extract_embedding(self, img):
+        """Извлекает эмбеддинг из изображения с использованием DeepFace и Facenet."""
+        try:
+            # Используем DeepFace для извлечения эмбеддинга
+            result = DeepFace.represent(
+                img_path=img,
+                model_name=self.model_name,
+                detector_backend = 'skip',
+                enforce_detection=False
+            )
 
-    def extract_embedding_from_frame(self, frame):
-        """Извлекает эмбеддинг из кадра видео."""
-        faces = self.model.get(frame)
-        if len(faces) == 0:
-            return None
-        return faces[0].embedding
+            if result:
+                return result[0]["embedding"]
+            else:
+                raise ValueError("Не удалось извлечь эмбеддинг!")
+        except Exception as e:
+            raise ValueError(f"Ошибка при извлечении эмбеддинга: {e}")
