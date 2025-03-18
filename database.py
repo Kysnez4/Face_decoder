@@ -1,6 +1,3 @@
-import sqlite3
-import numpy as np
-
 class FaceDatabase:
     def __init__(self, db_path='faces.db'):
         self.conn = sqlite3.connect(db_path)
@@ -13,7 +10,7 @@ class FaceDatabase:
                                (id INTEGER PRIMARY KEY, name TEXT, embedding BLOB)''')
         self.conn.commit()
 
-    def save_embedding(self, name, embedding):
+    def save_embedding(self, embedding, name=None):
         """Сохраняет эмбеддинг в базу данных."""
         self.cursor.execute("INSERT INTO faces (name, embedding) VALUES (?, ?)",
                             (name, embedding.tobytes()))
@@ -30,7 +27,7 @@ class FaceDatabase:
 
         for row in rows:
             face_id = row[0]
-            name = row[1]
+            name = row[1]  # Может быть None
             stored_embedding = np.frombuffer(row[2], dtype=np.float32)
             similarity = self._cosine_similarity(new_embedding, stored_embedding)
 

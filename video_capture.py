@@ -22,9 +22,9 @@ class VideoCapture:
                 # Поиск ID в базе данных
                 predicted_id, predicted_name = self.face_db.find_embedding(embedding)
 
-                # Отображение результата
                 if predicted_id != -1:
-                    cv2.putText(frame, f"ID: {predicted_id}, Name: {predicted_name}", (10, 30),
+                    display_name = predicted_name if predicted_name else "Unknown"
+                    cv2.putText(frame, f"ID: {predicted_id}, Name: {display_name}", (10, 30),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 else:
                     cv2.putText(frame, "Unknown", (10, 30),
