@@ -1,9 +1,35 @@
 import os
+from mtcnn import MTCNN  # MTCNN для детекции лиц
+from database import EmbeddingDatabase  # Класс для работы с базой данных
+
+from deepface import DeepFace
 import cv2
 import numpy as np
-from mtcnn import MTCNN  # MTCNN для детекции лиц
-from model import FaceModel  # Ваша модель для извлечения эмбеддингов
-from database import EmbeddingDatabase  # Класс для работы с базой данных
+
+class FaceModel:
+    def __init__(self, model_name="ArcFace"):
+        self.model_name = model_name
+        self.model = DeepFace.build_model(model_name)  # Загружаем модель
+
+    def extract_embedding(self, img):
+        """Извлекает эмбеддинг из изображения с использованием DeepFace."""
+        try:
+            # Используем DeepFace для извлечения эмбеддинга
+            result = DeepFace.represent(
+                img_path=img,
+                model_name=self.model_name,
+                detector_backend='skip',
+                enforce_detection=False
+            )
+
+            if result:
+                embedding = result[0]["embedding"]
+                return np.array(embedding)
+            else:
+                raise ValueError("Не удалось извлечь эмбеддинг!")
+        except Exception as e:
+            raise ValueError(f"Ошибка при извлечении эмбеддинга: {e}")
+
 
 # Инициализация MTCNN, модели и базы данных
 detector = MTCNN()
@@ -68,7 +94,7 @@ def process_student_photos(student_name, photos_folder):
 
             # Извлекаем эмбеддинг
             embedding = face_model.extract_embedding(normalized_face)
-            if embedding is not None and len(embedding) == 128:  # Проверяем, что эмбеддинг корректен
+            if embedding is not None and len(embedding) == 512:  # Проверяем, что эмбеддинг корректен
                 # Сохраняем эмбеддинг в базу данных с именем студента
                 embedding_db.insert_embedding(student_name, np.array(embedding))
                 print(f"Эмбеддинг для {student_name} ({photo_file}, лицо {i + 1}) добавлен в базу данных.")

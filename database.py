@@ -1,117 +1,44 @@
-import sqlite3
+import json
+import os
 import numpy as np
-from typing import List, Tuple, Optional
-import faiss  # Для ускорения поиска ближайших соседей
-
+from collections import defaultdict
+from sklearn.metrics.pairwise import cosine_similarity
 
 class EmbeddingDatabase:
-    def __init__(self, db_name: str = 'embeddings.db'):
-        self.db_name = db_name
-        self.dimension = 512  # Размерность эмбеддингов (можно изменить)
-        self.index = faiss.IndexFlatIP(self.dimension)  # Индекс FAISS для косинусного сходства
-        self.create_database()
+    def __init__(self, json_file='embeddings.json'):
+        self.json_file = json_file
+        self.embeddings = defaultdict(list)
+        self.load_embeddings()
 
-    def create_database(self):
-        """Создает базу данных и таблицу, если они не существуют."""
-        conn = sqlite3.connect(self.db_name)
-        cursor = conn.cursor()
+    def load_embeddings(self):
+        if os.path.exists(self.json_file):
+            with open(self.json_file, 'r') as f:
+                data = json.load(f)
+                for name, embeddings in data.items():
+                    self.embeddings[name] = [np.array(embedding) for embedding in embeddings]
 
-        # Создаем таблицу заново
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS embeddings (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                embedding BLOB NOT NULL
-            )
-        ''')
+    def save_embeddings(self):
+        with open(self.json_file, 'w') as f:
+            data = {name: [embedding.tolist() for embedding in embeddings] for name, embeddings in self.embeddings.items()}
+            json.dump(data, f, indent=4)
 
-        conn.commit()
-        conn.close()
+    def insert_embedding(self, name, embedding):
+        self.embeddings[name].append(embedding)
+        self.save_embeddings()
 
-    def insert_embedding(self, name: str, embedding: np.ndarray):
-        """
-        Вставляет эмбеддинг в базу данных.
+    def delete_embedding(self, name):
+        if name in self.embeddings:
+            del self.embeddings[name]
+            self.save_embeddings()
 
-        :param name: Имя студента.
-        :param embedding: Эмбеддинг (вектор).
-        """
-        conn = sqlite3.connect(self.db_name)
-        cursor = conn.cursor()
-
-        # Нормализуем эмбеддинг
-        normalized_embedding = embedding / np.linalg.norm(embedding)
-
-        # Преобразуем нормализованный эмбеддинг в байты для хранения в BLOB
-        embedding_bytes = normalized_embedding.tobytes()
-
-        cursor.execute('''
-            INSERT INTO embeddings (name, embedding) VALUES (?, ?)
-        ''', (name, embedding_bytes))
-
-        conn.commit()
-        conn.close()
-
-        # Добавляем эмбеддинг в индекс FAISS
-        self.index.add(np.array([normalized_embedding]).astype(np.float32))
-
-    def find_nearest_embeddings(self, query_embedding: np.ndarray, top_k: int = 10, similarity_threshold: float = 0.6) -> \
-    List[Tuple[int, str, float]]:
-        """
-        Находит ближайшие эмбеддинги по косинусному расстоянию.
-
-        :param query_embedding: Эмбеддинг для поиска.
-        :param top_k: Количество ближайших результатов.
-        :param similarity_threshold: Порог сходства (от 0 до 1).
-        :return: Список кортежей (id, name, similarity).
-        """
-        # Нормализуем запрос
-        query_embedding_normalized = query_embedding / np.linalg.norm(query_embedding)
-
-        # Получаем все эмбеддинги из базы данных
-        all_embeddings = self.get_all_embeddings()
-
-        # Если в базе данных нет эмбеддингов, возвращаем пустой список
-        if not all_embeddings:
-            return []
-
-        # Ищем ближайшие соседи с помощью FAISS
-        D, I = self.index.search(np.array([query_embedding_normalized]).astype(np.float32), top_k)
-
-        # Получаем результаты
-        nearest_embeddings = []
-        for i in range(top_k):
-            # Проверяем, что индекс находится в пределах списка all_embeddings
-            if I[0][i] < len(all_embeddings):
-                embedding_id, name, _ = all_embeddings[I[0][i]]
-                similarity = D[0][i]
-                if similarity >= similarity_threshold:  # Фильтруем по порогу сходства
-                    nearest_embeddings.append((embedding_id, name, similarity))
-            else:
-                # Если индекс выходит за пределы, пропускаем его
-                continue
-
-        return nearest_embeddings
-
-    def get_all_embeddings(self) -> List[Tuple[int, str, np.ndarray]]:
-        """
-        Возвращает все эмбеддинги из базы данных.
-
-        :return: Список кортежей (id, name, embedding).
-        """
-        conn = sqlite3.connect(self.db_name)
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            SELECT id, name, embedding FROM embeddings
-        ''')
-
-        results = cursor.fetchall()
-        conn.close()
-
-        embeddings = []
-        for result in results:
-            embedding_id, name, embedding_bytes = result
-            embedding = np.frombuffer(embedding_bytes, dtype=np.float32)
-            embeddings.append((embedding_id, name, embedding))
-
-        return embeddings
+    def find_nearest_embeddings(self, query_embedding, top_k=5, similarity_threshold=0.5):
+        query_embedding = query_embedding.reshape(1, -1)
+        results = []
+        for name, embeddings in self.embeddings.items():
+            for embedding in embeddings:
+                embedding = embedding.reshape(1, -1)
+                similarity = cosine_similarity(query_embedding, embedding)[0][0]
+                if similarity >= similarity_threshold:
+                    results.append((name, name, similarity))
+        results.sort(key=lambda x: x[2], reverse=True)
+        return results[:top_k]
